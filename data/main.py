@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from datetime import datetime, timedelta
@@ -31,7 +32,7 @@ CHARTS_URL = (
     "ISteamChartsService/GetMostPlayedGames/v1/"
 )
 DETAILS_URL = "https://store.steampowered.com/api/appdetails"
-REVIEWS_URL = "https://store.steampowered.com/appreviews/{}"
+REVIEWS_URL = "https://api.steampowered.com/IUserReviewsService/GetAppReviews/v1/"
 
 REFRESH_OPTIONS = {
     "1 minute": 60,
@@ -41,7 +42,8 @@ REFRESH_OPTIONS = {
 }
 
 HISTORY_DAYS = 30
-MAX_RETRIES = 2
+MIN_SNAPSHOT_INTERVAL_SECONDS = 300  # Avoid duplicate records from widget reruns.
+MAX_RETRIES = 3
 
 # =========================================================
 # THEME
@@ -190,7 +192,9 @@ def initialize_database():
 
 
 def save_snapshot(games):
-    now = datetime.now().isoformat(timespec="seconds")
+    """Store one Top 10 snapshot at most every five minutes."""
+    now_dt = datetime.now()
+    now = now_dt.isoformat(timespec="seconds")
 
     rows = [
         (
@@ -203,7 +207,24 @@ def save_snapshot(games):
         for game in games
     ]
 
+    if not rows:
+        return False
+
     with get_connection() as conn:
+        latest = conn.execute(
+            "SELECT MAX(collected_at) AS latest FROM snapshots"
+        ).fetchone()["latest"]
+
+        if latest:
+            try:
+                latest_dt = datetime.fromisoformat(latest)
+                elapsed = (now_dt - latest_dt).total_seconds()
+                if elapsed < MIN_SNAPSHOT_INTERVAL_SECONDS:
+                    return False
+            except (TypeError, ValueError):
+                # If an old/invalid timestamp exists, allow a new clean snapshot.
+                pass
+
         conn.executemany("""
             INSERT INTO snapshots (
                 collected_at,
@@ -214,6 +235,8 @@ def save_snapshot(games):
             )
             VALUES (?, ?, ?, ?, ?)
         """, rows)
+
+    return True
 
 
 def cleanup_old_history():
@@ -270,12 +293,13 @@ initialize_database()
 def get_session():
     session = requests.Session()
     session.headers.update({
-        "User-Agent": "SteamAnalyticsPro/2.0"
+        "User-Agent": "SteamAnalyticsPro/3.0 (Streamlit dashboard)"
     })
     return session
 
 
-def request_json(url, params=None, timeout=20):
+def request_json(url, params=None, timeout=25):
+    """Request JSON with a small retry window for temporary Steam errors."""
     session = get_session()
     last_error = None
 
@@ -287,15 +311,27 @@ def request_json(url, params=None, timeout=20):
                 timeout=timeout,
             )
             response.raise_for_status()
-            return response.json()
 
-        except (
-            requests.RequestException,
-            ValueError,
-        ) as error:
+            try:
+                payload = response.json()
+            except ValueError as error:
+                raise RuntimeError("Steam returned a non-JSON response.") from error
+
+            if not isinstance(payload, dict):
+                raise RuntimeError("Steam returned an unexpected JSON format.")
+            return payload
+
+        except (requests.RequestException, RuntimeError) as error:
             last_error = error
             if attempt < MAX_RETRIES - 1:
-                time.sleep(1)
+                retry_after = 0
+                response = getattr(error, "response", None)
+                if response is not None:
+                    try:
+                        retry_after = int(response.headers.get("Retry-After", 0))
+                    except (TypeError, ValueError):
+                        retry_after = 0
+                time.sleep(max(retry_after, 1 + attempt))
 
     raise RuntimeError(f"Steam request failed: {last_error}")
 
@@ -347,25 +383,59 @@ def fetch_game_details(appid):
     return item.get("data", {})
 
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False)
 def fetch_reviews(appid):
+    """Fetch lifetime review totals using Valve's current IUserReviewsService."""
+    input_json = {
+        "appid": int(appid),
+        "filter": 1,              # Recent sort; summary totals are lifetime totals.
+        "languages": ["all"],
+        "review_type": 0,         # All reviews, required for positive/negative totals.
+        "purchase_type": 1,       # All purchase types.
+        "num_per_page": 1,        # One review plus the aggregate summary; small response.
+        "cursor": "*",            # First page includes query_summary score totals.
+        "display_language": "english",
+        "filter_offtopic_activity": True,
+    }
+
     payload = request_json(
-        REVIEWS_URL.format(appid),
+        REVIEWS_URL,
         params={
-            "json": 1,
-            "filter": "summary",
-            "language": "all",
-            "num_per_page": 0,
+            "input_json": json.dumps(input_json, separators=(",", ":")),
         },
     )
 
-    return payload.get("query_summary", {})
+    # Steam Service API responses are wrapped in a top-level "response" object.
+    response = payload.get("response", payload)
+    summary = response.get("query_summary") if isinstance(response, dict) else None
+
+    required_fields = (
+        "total_positive",
+        "total_negative",
+        "total_reviews",
+        "review_score_desc",
+    )
+    if not isinstance(summary, dict) or not all(
+        field in summary for field in required_fields
+    ):
+        raise RuntimeError(
+            "Steam did not include review totals in query_summary. "
+            "Check the API response or try again later."
+        )
+
+    return {
+        "total_positive": int(summary["total_positive"] or 0),
+        "total_negative": int(summary["total_negative"] or 0),
+        "total_reviews": int(summary["total_reviews"] or 0),
+        "review_score_desc": str(summary.get("review_score_desc") or "Unknown"),
+        "review_score": summary.get("review_score"),
+    }
 
 
 def enrich_games(rankings):
     result = []
 
-    for item in rankings:
+    for index, item in enumerate(rankings):
         appid = item["appid"]
 
         try:
@@ -373,46 +443,46 @@ def enrich_games(rankings):
         except Exception:
             details = {}
 
+        # The anonymous Steam reviews endpoint has a lower rate limit.
+        # Cache each app for 30 minutes and space requests slightly apart.
+        if index:
+            time.sleep(0.15)
+
+        review_error = ""
         try:
             reviews = fetch_reviews(appid)
-        except Exception:
+            reviews_available = True
+        except Exception as error:
             reviews = {}
+            reviews_available = False
+            review_error = str(error)
 
-        release = details.get("release_date", {})
+        release = details.get("release_date") or {}
+        developers = details.get("developers") or []
+        genres = details.get("genres") or []
 
         result.append({
             **item,
             "name": details.get("name", f"App {appid}"),
             "image": details.get("header_image", ""),
-            "description": details.get(
-                "short_description",
-                "",
-            ),
+            "description": details.get("short_description", ""),
             "release_date": release.get("date", "Unknown"),
-            "developers": ", ".join(
-                details.get("developers", [])[:3]
-            ),
+            "developers": ", ".join(developers[:3]),
             "genres": ", ".join(
                 genre.get("description", "")
-                for genre in details.get("genres", [])[:4]
+                for genre in genres[:4]
+                if isinstance(genre, dict)
             ),
-            "positive": int(
-                reviews.get("total_positive", 0) or 0
-            ),
-            "negative": int(
-                reviews.get("total_negative", 0) or 0
-            ),
-            "total_reviews": int(
-                reviews.get("total_reviews", 0) or 0
-            ),
-            "review_score": reviews.get(
-                "review_score_desc",
-                "Unknown",
-            ),
+            # None means the request failed; it is not a genuine zero.
+            "reviews_available": reviews_available,
+            "review_error": review_error,
+            "positive": reviews.get("total_positive"),
+            "negative": reviews.get("total_negative"),
+            "total_reviews": reviews.get("total_reviews"),
+            "review_score": reviews.get("review_score_desc", "Unavailable"),
         })
 
     return result
-
 
 # =========================================================
 # FORMATTING
@@ -420,6 +490,10 @@ def enrich_games(rankings):
 
 def fmt(value):
     return f"{int(value or 0):,}"
+
+
+def fmt_optional(value):
+    return "Unavailable" if value is None else fmt(value)
 
 
 def rank_change(game):
@@ -490,7 +564,7 @@ def dark_chart(fig, height=420):
 
 with st.sidebar:
     st.markdown("## 🎮 STEAM ANALYTICS")
-    st.caption("Version 2.0 · Analytics Pro")
+    st.caption("Version 3.0 · Analytics Pro")
 
     st.divider()
 
@@ -601,7 +675,9 @@ if last_updated:
 
 top_game = games[0]
 total_chart_value = sum(g["players"] for g in games)
-total_reviews = sum(g["total_reviews"] for g in games)
+reviewed_games = [g for g in games if g.get("reviews_available")]
+review_data_count = len(reviewed_games)
+total_reviews = sum(g["total_reviews"] or 0 for g in reviewed_games)
 
 history_30 = load_history(30)
 
@@ -640,8 +716,8 @@ if page == "Dashboard":
     with d:
         st.metric(
             "TOTAL REVIEWS",
-            fmt(total_reviews),
-            "Top 10 combined",
+            fmt(total_reviews) if review_data_count else "Unavailable",
+            f"Data available for {review_data_count}/10 games",
         )
 
     heading("🏆 TOP 10 LEADERBOARD")
@@ -658,7 +734,7 @@ if page == "Dashboard":
                 <div class="game-card">
                     <div class="game-title">{game['name']}</div>
                     <div class="game-subtitle">
-                        {game['review_score']} ·
+                        {game['review_score'] if game['reviews_available'] else 'Reviews unavailable'} ·
                         {rank_change(game)} ·
                         App ID {game['appid']}
                     </div>
@@ -707,43 +783,48 @@ if page == "Dashboard":
 
     heading("⭐ REVIEW ANALYTICS")
 
-    review_df = pd.DataFrame(games)
-
-    fig = px.bar(
-        review_df,
-        x="name",
-        y=["positive", "negative"],
-        barmode="group",
-        labels={
-            "name": "Game",
-            "value": "Reviews",
-            "variable": "Review type",
-        },
-        color_discrete_map={
-            "positive": "#22c55e",
-            "negative": "#ef4444",
-        },
-    )
-
-    fig.update_layout(xaxis_tickangle=-30)
-
-    st.plotly_chart(
-        dark_chart(fig, 430),
-        use_container_width=True,
-    )
+    review_df = pd.DataFrame(reviewed_games)
+    if review_df.empty:
+        st.warning(
+            "Review data is currently unavailable from Steam. "
+            "The app will retry after the review-data cache expires."
+        )
+    else:
+        fig = px.bar(
+            review_df,
+            x="name",
+            y=["positive", "negative"],
+            barmode="group",
+            labels={
+                "name": "Game",
+                "value": "Lifetime reviews",
+                "variable": "Review type",
+            },
+            color_discrete_map={
+                "positive": "#22c55e",
+                "negative": "#ef4444",
+            },
+        )
+        fig.update_layout(xaxis_tickangle=-30)
+        st.plotly_chart(
+            dark_chart(fig, 430),
+            use_container_width=True,
+        )
+        if review_data_count < len(games):
+            st.caption(
+                f"Review data loaded for {review_data_count} of {len(games)} games. "
+                "Unavailable games are omitted rather than shown as zero."
+            )
 
     heading("📈 RECENT HISTORY")
 
     if not history_30.empty:
-        latest = history_30.sort_values(
-            "collected_at"
-        ).groupby("appid").tail(1)
-
         fig = px.line(
             history_30,
             x="collected_at",
             y="chart_value",
             color="game_name",
+            markers=True,
             labels={
                 "collected_at": "Time",
                 "chart_value": "Chart value",
@@ -756,8 +837,10 @@ if page == "Dashboard":
             use_container_width=True,
         )
 
+        snapshot_count = history_30["collected_at"].nunique()
         st.caption(
-            f"{len(history_30):,} historical records collected."
+            f"{snapshot_count:,} collection points · "
+            f"{len(history_30):,} game records · one snapshot at most every 5 minutes."
         )
     else:
         st.info(
@@ -807,7 +890,8 @@ elif page == "Game Explorer":
 
         st.write(f"**Current chart rank:** #{game['rank']}")
         st.write(f"**Previous weekly rank:** {game['last_week_rank'] or 'Unknown'}")
-        st.write(f"**Review rating:** {game['review_score']}")
+        rating_text = game["review_score"] if game["reviews_available"] else "Unavailable"
+        st.write(f"**Review rating:** {rating_text}")
         st.write(f"**Release date:** {game['release_date']}")
         st.write(f"**Developers:** {game['developers'] or 'Unknown'}")
         st.write(f"**Genres:** {game['genres'] or 'Unknown'}")
@@ -823,15 +907,23 @@ elif page == "Game Explorer":
     x, y, z = st.columns(3)
 
     with x:
-        st.metric("Positive", fmt(game["positive"]))
+        st.metric("Positive", fmt_optional(game["positive"]))
 
     with y:
-        st.metric("Negative", fmt(game["negative"]))
+        st.metric("Negative", fmt_optional(game["negative"]))
 
     with z:
-        st.metric("Total reviews", fmt(game["total_reviews"]))
+        st.metric("Total reviews", fmt_optional(game["total_reviews"]))
 
-    if game["positive"] + game["negative"] > 0:
+    if not game["reviews_available"]:
+        st.warning(
+            "Steam review totals could not be loaded for this game. "
+            "The values above are marked unavailable, not zero."
+        )
+        if game.get("review_error"):
+            with st.expander("Technical details"):
+                st.code(game["review_error"])
+    elif (game["positive"] or 0) + (game["negative"] or 0) > 0:
         review_fig = px.pie(
             names=["Positive", "Negative"],
             values=[game["positive"], game["negative"]],
@@ -842,7 +934,6 @@ elif page == "Game Explorer":
                 "Negative": "#ef4444",
             },
         )
-
         st.plotly_chart(
             dark_chart(review_fig, 350),
             use_container_width=True,
@@ -897,26 +988,34 @@ elif page == "Game Comparison":
 
         st.markdown("### Review comparison")
 
-        fig = px.bar(
-            compare_df,
-            x="name",
-            y=["positive", "negative"],
-            barmode="group",
-            labels={
-                "name": "Game",
-                "value": "Reviews",
-                "variable": "Review type",
-            },
-            color_discrete_map={
-                "positive": "#22c55e",
-                "negative": "#ef4444",
-            },
-        )
-
-        st.plotly_chart(
-            dark_chart(fig, 400),
-            use_container_width=True,
-        )
+        review_compare_df = compare_df[compare_df["reviews_available"]]
+        if review_compare_df.empty:
+            st.warning("Review statistics are unavailable for the selected games.")
+        else:
+            fig = px.bar(
+                review_compare_df,
+                x="name",
+                y=["positive", "negative"],
+                barmode="group",
+                labels={
+                    "name": "Game",
+                    "value": "Lifetime reviews",
+                    "variable": "Review type",
+                },
+                color_discrete_map={
+                    "positive": "#22c55e",
+                    "negative": "#ef4444",
+                },
+            )
+            st.plotly_chart(
+                dark_chart(fig, 400),
+                use_container_width=True,
+            )
+            missing_review_games = len(compare_df) - len(review_compare_df)
+            if missing_review_games:
+                st.caption(
+                    f"{missing_review_games} selected game(s) omitted because review data is unavailable."
+                )
 
         st.markdown("### Comparison table")
 
@@ -930,7 +1029,11 @@ elif page == "Game Comparison":
                 "negative",
                 "total_reviews",
             ]
-        ].rename(columns={
+        ].copy()
+        table.loc[~compare_df["reviews_available"], [
+            "review_score", "positive", "negative", "total_reviews"
+        ]] = "Unavailable"
+        table = table.rename(columns={
             "name": "Game",
             "rank": "Rank",
             "players": "Chart value",
@@ -972,7 +1075,7 @@ elif page == "Player History":
     if history.empty:
         st.info(
             "No history has been collected for this period yet. "
-            "Leave the app running to collect snapshots."
+            "Keep the app open; snapshots are collected when the dashboard successfully refreshes."
         )
     else:
         game_names = sorted(history["game_name"].unique())
@@ -1010,14 +1113,14 @@ elif page == "Player History":
 
         with a:
             st.metric(
-                "Records",
+                "Game records",
                 fmt(len(history)),
             )
 
         with b:
             st.metric(
-                "Games tracked",
-                fmt(history["appid"].nunique()),
+                "Collection points",
+                fmt(history["collected_at"].nunique()),
             )
 
         with c:
@@ -1078,7 +1181,7 @@ elif page == "Data & Export":
         st.info("No historical data available yet.")
     else:
         st.metric(
-            "Stored snapshots",
+            "Stored game records",
             fmt(len(all_history)),
         )
 
@@ -1096,6 +1199,7 @@ elif page == "Data & Export":
 
     st.caption(f"Database file: {DB_PATH.name}")
     st.caption("History retention: approximately 30 days.")
+    st.caption("The app stores at most one collection point every 5 minutes to avoid duplicate records from page interactions.")
     st.caption(
         "This SQLite database is local to the app environment. "
         "For reliable long-term cloud history, connect an external database."
@@ -1132,17 +1236,20 @@ elif page == "About":
 
         - Steam Charts Service API.
         - Steam Store App Details API.
-        - Steam Store Reviews API.
+        - Steamworks IUserReviewsService GetAppReviews API (current reviews endpoint).
 
         **Important limitations**
 
         - Steam controls when chart data is updated.
         - The chart value is not guaranteed to be an instantaneous live count.
         - Historical collection begins after deployment.
-        - History is collected only when the app successfully loads new data.
+        - History is collected only when the app successfully loads new data, at most once every five minutes.
+        - Streamlit Cloud may pause inactive apps, so history does not collect while the app is asleep.
         - SQLite storage on Streamlit Cloud is not guaranteed to survive
           environment replacement or redeployment.
         - Review summaries are aggregate totals, not historical review data.
+        - Review data may be unavailable temporarily due to Steam rate limits; unavailable values are not displayed as zero.
+        - Anonymous review API results may be cached by Steam for up to 10 minutes.
 
         This project is not affiliated with Valve Corporation.
         """
@@ -1165,6 +1272,6 @@ elif page == "About":
 st.divider()
 
 st.caption(
-    "STEAM ANALYTICS PRO · VERSION 2.0 · "
+    "STEAM ANALYTICS PRO · VERSION 3.0 · "
     "PYTHON + STREAMLIT · UNOFFICIAL STEAM DASHBOARD"
 )
