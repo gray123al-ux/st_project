@@ -559,12 +559,104 @@ def dark_chart(fig, height=420):
 
 
 # =========================================================
+# CHART BUILDERS — each section offers several visual styles
+# =========================================================
+
+def make_player_chart(df, chart_type):
+    """Build a selectable chart for Steam's Top 10 chart values."""
+    labels = {"players": "Steam chart value", "name": "Game"}
+
+    if chart_type == "Horizontal bars":
+        fig = px.bar(
+            df, x="players", y="name", orientation="h", text="players",
+            color="players", color_continuous_scale="Blues", labels=labels,
+        )
+        fig.update_layout(yaxis={"categoryorder": "total ascending"}, coloraxis_showscale=False)
+    elif chart_type == "Vertical bars":
+        fig = px.bar(df, x="name", y="players", text="players", color="name", labels=labels)
+        fig.update_layout(xaxis_tickangle=-30, showlegend=False)
+    elif chart_type == "Line":
+        fig = px.line(df, x="name", y="players", markers=True, text="players", labels=labels)
+        fig.update_traces(line_width=3, marker_size=9)
+        fig.update_layout(xaxis_tickangle=-30)
+    elif chart_type == "Area":
+        fig = px.area(df, x="name", y="players", labels=labels)
+        fig.update_layout(xaxis_tickangle=-30)
+    elif chart_type == "Scatter":
+        fig = px.scatter(df, x="name", y="players", size="players", color="rank", hover_name="name", labels=labels)
+        fig.update_layout(xaxis_tickangle=-30)
+    elif chart_type == "Donut":
+        fig = px.pie(df, names="name", values="players", hole=0.58, labels=labels)
+    else:  # Treemap
+        fig = px.treemap(df, path=["name"], values="players", color="players", color_continuous_scale="Blues")
+        fig.update_layout(coloraxis_showscale=False)
+
+    return dark_chart(fig, 470)
+
+
+def make_review_chart(df, chart_type, height=430):
+    """Build a selectable comparison of positive and negative review totals."""
+    long_df = df.melt(
+        id_vars=["name"],
+        value_vars=["positive", "negative"],
+        var_name="Review type",
+        value_name="Reviews",
+    )
+    long_df["Review type"] = long_df["Review type"].map({
+        "positive": "Positive", "negative": "Negative"
+    })
+    colors = {"Positive": "#22c55e", "Negative": "#ef4444"}
+
+    if chart_type == "Grouped bars":
+        fig = px.bar(long_df, x="name", y="Reviews", color="Review type", barmode="group", color_discrete_map=colors)
+        fig.update_layout(xaxis_tickangle=-30)
+    elif chart_type == "Stacked bars":
+        fig = px.bar(long_df, x="name", y="Reviews", color="Review type", barmode="stack", color_discrete_map=colors)
+        fig.update_layout(xaxis_tickangle=-30)
+    elif chart_type == "Horizontal bars":
+        fig = px.bar(long_df, x="Reviews", y="name", color="Review type", barmode="group", orientation="h", color_discrete_map=colors)
+        fig.update_layout(yaxis={"categoryorder": "total ascending"})
+    elif chart_type == "Line":
+        fig = px.line(long_df, x="name", y="Reviews", color="Review type", markers=True, color_discrete_map=colors)
+        fig.update_layout(xaxis_tickangle=-30)
+    elif chart_type == "Area":
+        fig = px.area(long_df, x="name", y="Reviews", color="Review type", color_discrete_map=colors)
+        fig.update_layout(xaxis_tickangle=-30)
+    else:  # Donut summarizes sentiment across all currently displayed games.
+        totals = pd.DataFrame({
+            "Review type": ["Positive", "Negative"],
+            "Reviews": [int(df["positive"].sum()), int(df["negative"].sum())],
+        })
+        fig = px.pie(totals, names="Review type", values="Reviews", hole=0.58, color="Review type", color_discrete_map=colors)
+
+    return dark_chart(fig, height)
+
+
+def make_history_chart(df, chart_type, height=460):
+    """Build a selectable time-series view of collected Steam chart values."""
+    labels = {
+        "collected_at": "Time",
+        "chart_value": "Steam chart value",
+        "game_name": "Game",
+    }
+    if chart_type == "Line":
+        fig = px.line(df, x="collected_at", y="chart_value", color="game_name", markers=True, labels=labels)
+    elif chart_type == "Area":
+        fig = px.area(df, x="collected_at", y="chart_value", color="game_name", labels=labels)
+    elif chart_type == "Scatter":
+        fig = px.scatter(df, x="collected_at", y="chart_value", color="game_name", symbol="game_name", labels=labels)
+    else:  # Bars
+        fig = px.bar(df, x="collected_at", y="chart_value", color="game_name", barmode="group", labels=labels)
+    return dark_chart(fig, height)
+
+
+# =========================================================
 # SIDEBAR
 # =========================================================
 
 with st.sidebar:
     st.markdown("## 🎮 STEAM ANALYTICS")
-    st.caption("Version 3.0 · Analytics Pro")
+    st.caption("Version 3.1 · Chart Studio")
 
     st.divider()
 
@@ -752,32 +844,14 @@ if page == "Dashboard":
     heading("📊 PLAYER COMPARISON")
 
     player_df = pd.DataFrame(games)
-
-    fig = px.bar(
-        player_df,
-        x="players",
-        y="name",
-        orientation="h",
-        text="players",
-        color="players",
-        color_continuous_scale=[
-            "#1e3a8a",
-            "#2563eb",
-            "#38bdf8",
-        ],
-        labels={
-            "players": "Steam chart value",
-            "name": "Game",
-        },
+    player_chart_type = st.selectbox(
+        "Choose player chart style",
+        ["Horizontal bars", "Vertical bars", "Line", "Area", "Scatter", "Donut", "Treemap"],
+        index=0,
+        key="dashboard_player_chart_type",
     )
-
-    fig.update_layout(
-        yaxis={"categoryorder": "total ascending"},
-        coloraxis_showscale=False,
-    )
-
     st.plotly_chart(
-        dark_chart(fig, 470),
+        make_player_chart(player_df, player_chart_type),
         use_container_width=True,
     )
 
@@ -790,24 +864,14 @@ if page == "Dashboard":
             "The app will retry after the review-data cache expires."
         )
     else:
-        fig = px.bar(
-            review_df,
-            x="name",
-            y=["positive", "negative"],
-            barmode="group",
-            labels={
-                "name": "Game",
-                "value": "Lifetime reviews",
-                "variable": "Review type",
-            },
-            color_discrete_map={
-                "positive": "#22c55e",
-                "negative": "#ef4444",
-            },
+        review_chart_type = st.selectbox(
+            "Choose review chart style",
+            ["Grouped bars", "Stacked bars", "Horizontal bars", "Line", "Area", "Donut"],
+            index=0,
+            key="dashboard_review_chart_type",
         )
-        fig.update_layout(xaxis_tickangle=-30)
         st.plotly_chart(
-            dark_chart(fig, 430),
+            make_review_chart(review_df, review_chart_type, height=430),
             use_container_width=True,
         )
         if review_data_count < len(games):
@@ -819,21 +883,14 @@ if page == "Dashboard":
     heading("📈 RECENT HISTORY")
 
     if not history_30.empty:
-        fig = px.line(
-            history_30,
-            x="collected_at",
-            y="chart_value",
-            color="game_name",
-            markers=True,
-            labels={
-                "collected_at": "Time",
-                "chart_value": "Chart value",
-                "game_name": "Game",
-            },
+        history_chart_type = st.selectbox(
+            "Choose history chart style",
+            ["Line", "Area", "Scatter", "Bars"],
+            index=0,
+            key="dashboard_history_chart_type",
         )
-
         st.plotly_chart(
-            dark_chart(fig, 380),
+            make_history_chart(history_30, history_chart_type, height=390),
             use_container_width=True,
         )
 
@@ -847,7 +904,6 @@ if page == "Dashboard":
             "Your history graph will appear after statistics "
             "have been collected."
         )
-
 
 # =========================================================
 # GAME EXPLORER
@@ -968,47 +1024,31 @@ elif page == "Game Comparison":
         compare_df = pd.DataFrame(selected_games)
 
         st.markdown("### Player chart values")
-
-        fig = px.bar(
-            compare_df,
-            x="name",
-            y="players",
-            text="players",
-            color="name",
-            labels={
-                "name": "Game",
-                "players": "Chart value",
-            },
+        player_compare_type = st.selectbox(
+            "Player comparison chart style",
+            ["Horizontal bars", "Vertical bars", "Line", "Area", "Scatter", "Donut", "Treemap"],
+            index=1,
+            key="comparison_player_chart_type",
         )
-
         st.plotly_chart(
-            dark_chart(fig, 400),
+            make_player_chart(compare_df, player_compare_type),
             use_container_width=True,
         )
 
         st.markdown("### Review comparison")
 
-        review_compare_df = compare_df[compare_df["reviews_available"]]
+        review_compare_df = compare_df[compare_df["reviews_available"]].copy()
         if review_compare_df.empty:
             st.warning("Review statistics are unavailable for the selected games.")
         else:
-            fig = px.bar(
-                review_compare_df,
-                x="name",
-                y=["positive", "negative"],
-                barmode="group",
-                labels={
-                    "name": "Game",
-                    "value": "Lifetime reviews",
-                    "variable": "Review type",
-                },
-                color_discrete_map={
-                    "positive": "#22c55e",
-                    "negative": "#ef4444",
-                },
+            review_compare_type = st.selectbox(
+                "Review comparison chart style",
+                ["Grouped bars", "Stacked bars", "Horizontal bars", "Line", "Area", "Donut"],
+                index=0,
+                key="comparison_review_chart_type",
             )
             st.plotly_chart(
-                dark_chart(fig, 400),
+                make_review_chart(review_compare_df, review_compare_type, height=420),
                 use_container_width=True,
             )
             missing_review_games = len(compare_df) - len(review_compare_df)
@@ -1091,21 +1131,14 @@ elif page == "Player History":
         ]
 
         if not filtered.empty:
-            fig = px.line(
-                filtered,
-                x="collected_at",
-                y="chart_value",
-                color="game_name",
-                markers=True,
-                labels={
-                    "collected_at": "Time",
-                    "chart_value": "Chart value",
-                    "game_name": "Game",
-                },
+            history_chart_type = st.selectbox(
+                "History chart style",
+                ["Line", "Area", "Scatter", "Bars"],
+                index=0,
+                key="player_history_chart_type",
             )
-
             st.plotly_chart(
-                dark_chart(fig, 480),
+                make_history_chart(filtered, history_chart_type, height=480),
                 use_container_width=True,
             )
 
@@ -1231,6 +1264,7 @@ elif page == "About":
         - SQLite snapshot collection.
         - CSV exports.
         - Automatic refresh.
+        - Selectable player, review and history chart styles.
 
         **Data sources**
 
@@ -1272,6 +1306,6 @@ elif page == "About":
 st.divider()
 
 st.caption(
-    "STEAM ANALYTICS PRO · VERSION 3.0 · "
+    "STEAM ANALYTICS PRO · VERSION 3.1 · "
     "PYTHON + STREAMLIT · UNOFFICIAL STEAM DASHBOARD"
 )
