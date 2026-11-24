@@ -19,7 +19,7 @@ from streamlit_autorefresh import st_autorefresh
 # =========================================================
 
 st.set_page_config(
-    page_title="Steam Analytics Pro | Command Center",
+    page_title="Steam Charts | What players are playing",
     page_icon="🎮",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -53,154 +53,172 @@ MAX_RETRIES = 3
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap');
 
     :root {
-        --bg: #080d18;
-        --panel: #111c2e;
-        --panel-2: #15243a;
-        --line: rgba(148, 163, 184, .16);
-        --muted: #91a2ba;
-        --text: #eef4ff;
-        --blue: #69a7ff;
-        --cyan: #59d2e8;
+        --bg: #171a16;
+        --panel: #20261f;
+        --panel-soft: #252d24;
+        --line: rgba(201, 214, 184, .13);
+        --muted: #a5ae9c;
+        --text: #f0f0e8;
+        --accent: #c7d99a;
+        --accent-dark: #7d9660;
+        --warm: #e5b27e;
     }
 
     html, body, [class*="css"], [data-testid="stAppViewContainer"] {
         font-family: 'DM Sans', sans-serif;
     }
-
     .stApp {
         background:
-          radial-gradient(ellipse at 82% -8%, rgba(37, 99, 235, .22), transparent 34%),
-          radial-gradient(ellipse at 6% 18%, rgba(8, 145, 178, .09), transparent 30%),
-          linear-gradient(145deg, #080d18 0%, #0b1423 52%, #080d18 100%);
+          radial-gradient(ellipse at 88% 0%, rgba(125, 150, 96, .13), transparent 34%),
+          radial-gradient(ellipse at 5% 38%, rgba(178, 126, 78, .07), transparent 32%),
+          #171a16;
         color: var(--text);
     }
-
-    [data-testid="stHeader"] { background: rgba(8, 13, 24, .72); }
+    [data-testid="stHeader"] { background: rgba(23, 26, 22, .88); }
     [data-testid="stToolbar"] { right: 1rem; }
-    .block-container { max-width: 1540px; padding-top: 1.7rem; padding-bottom: 2.5rem; }
+    .block-container { max-width: 1480px; padding-top: 1.6rem; padding-bottom: 2.6rem; }
 
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0d1728 0%, #09111e 100%);
-        border-right: 1px solid rgba(148, 163, 184, .13);
+        background: #1b201a;
+        border-right: 1px solid rgba(201, 214, 184, .11);
     }
-    [data-testid="stSidebar"] > div:first-child { padding-top: 1.3rem; }
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { color: #9fb0c7; }
-    [data-testid="stSidebar"] hr { border-color: rgba(148, 163, 184, .14); }
-    [data-testid="stSidebar"] [role="radiogroup"] { gap: .35rem; }
+    [data-testid="stSidebar"] > div:first-child { padding-top: 1.2rem; }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { color: #aeb7a5; }
+    [data-testid="stSidebar"] hr { border-color: rgba(201, 214, 184, .13); }
+    [data-testid="stSidebar"] [role="radiogroup"] { gap: .28rem; }
     [data-testid="stSidebar"] [role="radiogroup"] label {
-        border: 1px solid transparent; border-radius: 11px; padding: .58rem .72rem;
-        transition: all .18s ease; color: #bdc9da;
+        border: 1px solid transparent;
+        border-radius: 10px;
+        padding: .55rem .68rem;
+        color: #c4cbbb;
+        transition: background .15s ease, border-color .15s ease;
     }
     [data-testid="stSidebar"] [role="radiogroup"] label:hover {
-        background: rgba(96, 165, 250, .09); border-color: rgba(96, 165, 250, .2);
+        background: rgba(199, 217, 154, .08);
+        border-color: rgba(199, 217, 154, .17);
     }
+
+    .brand-mark {
+        display: flex; align-items: center; gap: 10px;
+        color: #eff1e8; font-size: 1.06rem; font-weight: 800; letter-spacing: -.035em;
+    }
+    .brand-icon {
+        width: 34px; height: 34px; display: grid; place-items: center;
+        border-radius: 11px; background: #303b2b; border: 1px solid #46553a;
+        font-size: 1.05rem;
+    }
+    .sidebar-note { color: #899482; font-size: .78rem; line-height: 1.5; margin-top: 7px; }
 
     .hero {
         position: relative; overflow: hidden; isolation: isolate;
-        padding: 30px 34px; border: 1px solid rgba(125, 170, 230, .25);
-        border-radius: 22px; margin-bottom: 24px;
-        background: linear-gradient(112deg, rgba(24, 50, 91, .96), rgba(17, 31, 52, .96) 56%, rgba(14, 26, 43, .98));
-        box-shadow: 0 18px 55px rgba(0, 0, 0, .22), inset 0 1px 0 rgba(255,255,255,.06);
+        padding: 29px 32px; border: 1px solid rgba(201, 214, 184, .15);
+        border-radius: 19px; margin-bottom: 22px;
+        background: linear-gradient(112deg, #293326 0%, #242b22 57%, #292921 100%);
+        box-shadow: 0 12px 34px rgba(0, 0, 0, .15);
     }
     .hero:after {
-        content: ''; position: absolute; z-index: -1; width: 330px; height: 330px;
-        right: -95px; top: -175px; border-radius: 50%;
-        background: radial-gradient(circle, rgba(69, 155, 255, .28), transparent 68%);
+        content: ''; position: absolute; z-index: -1; width: 290px; height: 290px;
+        right: -90px; top: -165px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(199, 217, 154, .15), transparent 69%);
     }
-    .hero .eyebrow { color: #83c5ff; font-size: .72rem; font-weight: 800; letter-spacing: .19em; margin-bottom: 10px; }
+    .hero .eyebrow {
+        color: #c4d3a5; font-size: .7rem; font-weight: 700;
+        letter-spacing: .13em; margin-bottom: 10px; text-transform: uppercase;
+    }
     .hero h1 {
-        color: #fff; font-family: 'Space Grotesk', sans-serif; font-size: clamp(1.8rem, 4vw, 2.65rem);
-        line-height: 1.08; font-weight: 700; letter-spacing: -.045em; margin: 0;
+        color: #f4f1e8; font-family: 'Fraunces', Georgia, serif;
+        font-size: clamp(2rem, 4vw, 2.8rem); line-height: 1.06;
+        font-weight: 600; letter-spacing: -.035em; margin: 0;
     }
-    .hero p { color: #b6c8e2; font-size: .98rem; margin: 11px 0 0; max-width: 690px; }
-    .hero-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 19px; }
+    .hero p { color: #c2c8b9; font-size: .98rem; margin: 11px 0 0; max-width: 720px; line-height: 1.65; }
+    .hero-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 17px; }
     .hero-badge {
-        display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px;
-        border-radius: 999px; background: rgba(8, 17, 31, .42); border: 1px solid rgba(173, 203, 245, .18);
-        color: #d7e7fb; font-size: .72rem; font-weight: 700;
+        display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px;
+        border-radius: 8px; background: rgba(13, 18, 12, .24);
+        border: 1px solid rgba(201, 214, 184, .14);
+        color: #d9dece; font-size: .72rem; font-weight: 600;
     }
-    .hero-dot { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: #42d392; box-shadow: 0 0 12px rgba(66,211,146,.7); }
+    .hero-dot { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: #a9c77b; }
 
     .section-heading {
-        display: flex; align-items: center; gap: 11px; color: #f3f7ff;
-        font-family: 'Space Grotesk', sans-serif; font-size: 1.15rem; font-weight: 700;
-        letter-spacing: -.02em; margin: 28px 0 13px; padding-bottom: 10px;
-        border-bottom: 1px solid rgba(148, 163, 184, .13);
+        display: flex; align-items: center; gap: 10px; color: #eff0e7;
+        font-family: 'DM Sans', sans-serif; font-size: 1.05rem; font-weight: 800;
+        letter-spacing: -.025em; margin: 27px 0 13px; padding-bottom: 10px;
+        border-bottom: 1px solid rgba(201, 214, 184, .12);
     }
-    .section-heading:before { content: ''; width: 4px; height: 21px; border-radius: 5px; background: linear-gradient(180deg, #66b7ff, #35d0d5); }
+    .section-heading:before {
+        content: ''; width: 4px; height: 18px; border-radius: 5px;
+        background: var(--accent-dark);
+    }
 
     [data-testid="stMetric"] {
-        background: linear-gradient(145deg, rgba(23, 39, 62, .96), rgba(16, 28, 45, .96));
-        border: 1px solid rgba(127, 163, 207, .2); border-radius: 16px;
-        padding: 17px 18px; box-shadow: 0 8px 26px rgba(0,0,0,.12);
-        min-height: 112px;
+        background: #222920; border: 1px solid rgba(201, 214, 184, .13);
+        border-radius: 13px; padding: 15px 17px;
+        box-shadow: 0 5px 17px rgba(0,0,0,.10); min-height: 106px;
     }
-    [data-testid="stMetricLabel"] { color: #a9bbd3 !important; font-size: .76rem !important; font-weight: 700 !important; letter-spacing: .045em; text-transform: uppercase; }
-    [data-testid="stMetricValue"] { color: #f3f7ff !important; font-family: 'Space Grotesk', sans-serif; font-size: clamp(1.35rem, 2vw, 1.9rem) !important; font-weight: 700 !important; }
-    [data-testid="stMetricDelta"] { font-size: .76rem !important; }
+    [data-testid="stMetricLabel"] { color: #aab5a1 !important; font-size: .74rem !important; font-weight: 700 !important; letter-spacing: .025em; }
+    [data-testid="stMetricValue"] { color: #f0f0e8 !important; font-family: 'DM Sans', sans-serif; font-size: clamp(1.28rem, 2vw, 1.8rem) !important; font-weight: 800 !important; letter-spacing: -.04em; }
+    [data-testid="stMetricDelta"] { font-size: .75rem !important; }
 
     .leaderboard-row {
-        display: flex; align-items: center; gap: 15px; padding: 12px 15px;
-        margin: 0 0 9px; border: 1px solid rgba(121, 155, 197, .17);
-        border-radius: 15px; background: linear-gradient(110deg, rgba(22, 37, 59, .96), rgba(15, 27, 44, .96));
-        box-shadow: 0 5px 18px rgba(0,0,0,.11); transition: transform .18s ease, border-color .18s ease;
+        display: flex; align-items: center; gap: 14px; padding: 12px 14px;
+        margin: 0 0 8px; border: 1px solid rgba(201, 214, 184, .12);
+        border-radius: 13px; background: #20261f;
+        transition: background .15s ease, border-color .15s ease;
     }
-    .leaderboard-row:hover { transform: translateY(-2px); border-color: rgba(96, 165, 250, .42); }
+    .leaderboard-row:hover { background: #252e23; border-color: rgba(199, 217, 154, .28); }
     .rank-badge {
-        width: 42px; height: 42px; flex: 0 0 42px; display: grid; place-items: center;
-        border-radius: 12px; color: #d7eaff; font-family: 'Space Grotesk', sans-serif;
-        font-weight: 700; font-size: 1.02rem; background: rgba(59, 130, 246, .15);
-        border: 1px solid rgba(96, 165, 250, .25);
+        width: 39px; height: 39px; flex: 0 0 39px; display: grid; place-items: center;
+        border-radius: 10px; color: #d8ddce; font-weight: 800; font-size: .95rem;
+        background: #2b3328; border: 1px solid rgba(201, 214, 184, .13);
     }
-    .rank-badge.top-three { color: #ffe5a6; background: rgba(217, 164, 65, .13); border-color: rgba(245, 190, 85, .27); }
-    .leaderboard-cover { width: 112px; height: 52px; flex: 0 0 112px; object-fit: cover; border-radius: 9px; background: #1d2c42; }
+    .rank-badge.top-three { color: #f3d5a9; background: #3b3326; border-color: rgba(229, 178, 126, .25); }
+    .leaderboard-cover { width: 108px; height: 50px; flex: 0 0 108px; object-fit: cover; border-radius: 7px; background: #30382d; }
     .leaderboard-info { flex: 1; min-width: 0; }
-    .leaderboard-title { color: #f4f7ff; font-size: .98rem; font-weight: 800; line-height: 1.3; }
-    .leaderboard-subtitle { color: #8ea2bd; font-size: .76rem; margin-top: 5px; }
-    .leaderboard-score { flex: 0 0 auto; text-align: right; color: #eaf4ff; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 1.07rem; }
-    .leaderboard-score small { display: block; color: #8298b4; font-family: 'DM Sans', sans-serif; font-size: .66rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; margin-top: 2px; }
+    .leaderboard-title { color: #f0f0e8; font-size: .96rem; font-weight: 700; line-height: 1.3; }
+    .leaderboard-subtitle { color: #9ea995; font-size: .75rem; margin-top: 5px; }
+    .leaderboard-score { flex: 0 0 auto; text-align: right; color: #e7ebde; font-weight: 800; font-size: 1rem; }
+    .leaderboard-score small { display: block; color: #96a08e; font-size: .66rem; font-weight: 600; margin-top: 2px; }
 
     .game-card {
-        background: linear-gradient(145deg, rgba(22, 38, 61, .98), rgba(14, 26, 43, .98));
-        border: 1px solid rgba(127, 163, 207, .2); border-radius: 15px;
-        padding: 15px 17px; margin-bottom: 10px;
+        background: #222920; border: 1px solid rgba(201, 214, 184, .13);
+        border-radius: 13px; padding: 14px 16px; margin-bottom: 10px;
     }
-    .game-title { color: #f6f9ff; font-weight: 800; font-size: 1rem; }
-    .game-subtitle { color: #91a5c0; font-size: .78rem; margin-top: 5px; }
-    .small-muted { color: #91a5c0; font-size: .82rem; }
+    .game-title { color: #f0f0e8; font-weight: 700; font-size: 1rem; }
+    .game-subtitle { color: #a5ae9c; font-size: .78rem; margin-top: 5px; }
+    .small-muted { color: #a5ae9c; font-size: .82rem; }
 
     .stButton > button, .stDownloadButton > button, .stLinkButton > a {
-        border-radius: 11px; font-weight: 700; border: 1px solid rgba(113, 161, 222, .28);
-        background: linear-gradient(115deg, #1e4d85, #176c91); color: #f8fbff;
-        transition: transform .16s ease, filter .16s ease, box-shadow .16s ease;
+        border-radius: 9px; font-weight: 700;
+        border: 1px solid #63784c; background: #465b38; color: #f4f3e9;
+        transition: background .15s ease, border-color .15s ease;
     }
     .stButton > button:hover, .stDownloadButton > button:hover, .stLinkButton > a:hover {
-        border-color: rgba(125, 190, 255, .7); filter: brightness(1.12); transform: translateY(-1px);
-        box-shadow: 0 7px 18px rgba(18, 103, 170, .2);
+        border-color: #91a873; background: #526b41; color: #fff;
     }
     [data-testid="stSelectbox"], [data-testid="stMultiSelect"] { margin-bottom: .15rem; }
     [data-testid="stSelectbox"] > div > div, [data-testid="stMultiSelect"] > div > div {
-        background: rgba(18, 32, 52, .9); border-color: rgba(127, 163, 207, .25); border-radius: 11px;
+        background: #242c22; border-color: rgba(201, 214, 184, .17); border-radius: 9px;
     }
-    [data-testid="stDataFrame"] { border: 1px solid rgba(127, 163, 207, .18); border-radius: 13px; overflow: hidden; }
-    div[data-testid="stImage"] { border-radius: 13px; overflow: hidden; }
-    [data-testid="stAlert"] { border-radius: 12px; }
-    .stCaption, [data-testid="stCaptionContainer"] { color: #8296b1; }
-    hr { border-color: rgba(148, 163, 184, .14); }
+    [data-testid="stDataFrame"] { border: 1px solid rgba(201, 214, 184, .14); border-radius: 11px; overflow: hidden; }
+    div[data-testid="stImage"] { border-radius: 11px; overflow: hidden; }
+    [data-testid="stAlert"] { border-radius: 11px; }
+    .stCaption, [data-testid="stCaptionContainer"] { color: #929d89; }
+    hr { border-color: rgba(201, 214, 184, .13); }
 
     @media (max-width: 720px) {
         .block-container { padding-left: 1rem; padding-right: 1rem; padding-top: 1rem; }
-        .hero { padding: 22px 20px; border-radius: 17px; }
-        .leaderboard-row { gap: 9px; padding: 10px; }
-        .leaderboard-cover { width: 76px; height: 46px; flex-basis: 76px; }
-        .rank-badge { width: 34px; height: 34px; flex-basis: 34px; font-size: .9rem; }
-        .leaderboard-title { font-size: .86rem; }
-        .leaderboard-subtitle { font-size: .68rem; }
-        .leaderboard-score { font-size: .88rem; }
-        [data-testid="stMetric"] { padding: 13px; min-height: 96px; }
+        .hero { padding: 22px 19px; border-radius: 15px; }
+        .leaderboard-row { gap: 8px; padding: 9px; }
+        .leaderboard-cover { width: 72px; height: 44px; flex-basis: 72px; }
+        .rank-badge { width: 32px; height: 32px; flex-basis: 32px; font-size: .85rem; }
+        .leaderboard-title { font-size: .85rem; }
+        .leaderboard-subtitle { font-size: .66rem; }
+        .leaderboard-score { font-size: .85rem; }
+        [data-testid="stMetric"] { padding: 12px; min-height: 92px; }
     }
     </style>
     """,
@@ -344,7 +362,7 @@ initialize_database()
 def get_session():
     session = requests.Session()
     session.headers.update({
-        "User-Agent": "SteamAnalyticsPro/3.2 (Streamlit dashboard)"
+        "User-Agent": "SteamChartsCommunityDashboard/4.0"
     })
     return session
 
@@ -551,17 +569,17 @@ def rank_change(game):
     previous = game.get("last_week_rank")
 
     if not previous:
-        return "No previous rank"
+        return "No rank last week"
 
     difference = previous - game["rank"]
 
     if difference > 0:
-        return f"▲ Up {difference}"
+        return f"↑ Up {difference} places"
 
     if difference < 0:
-        return f"▼ Down {abs(difference)}"
+        return f"↓ Down {abs(difference)} places"
 
-    return "— No change"
+    return "— Same as last week"
 
 
 def player_change_text(current, previous):
@@ -578,14 +596,13 @@ def header():
     st.markdown(
         """
         <div class="hero">
-            <div class="eyebrow">STEAM CHARTS  /  GAMING INTELLIGENCE</div>
-            <h1>STEAM ANALYTICS PRO</h1>
-            <p>Your command center for the games people are playing, community sentiment, and trends over time.</p>
+            <div class="eyebrow">A LITTLE LOOK AT WHAT'S POPULAR</div>
+            <h1>What's everyone playing?</h1>
+            <p>Browse the games topping Steam's charts, see what players think, and follow how the list changes over time.</p>
             <div class="hero-badges">
-                <span class="hero-badge"><span class="hero-dot"></span> LIVE DATA CONNECTION</span>
-                <span class="hero-badge">TOP 10 RANKINGS</span>
-                <span class="hero-badge">REVIEW INSIGHTS</span>
-                <span class="hero-badge">HISTORICAL TRENDS</span>
+                <span class="hero-badge"><span class="hero-dot"></span> STEAM CHARTS</span>
+                <span class="hero-badge">PLAYER REVIEWS</span>
+                <span class="hero-badge">RECENT TRENDS</span>
             </div>
         </div>
         """,
@@ -608,10 +625,11 @@ def dark_chart(fig, height=420):
         plot_bgcolor="rgba(0,0,0,0)",
         margin=dict(l=18, r=18, t=34, b=18),
         legend_title_text="",
-        font=dict(family="DM Sans, sans-serif", color="#c7d5e8", size=12),
-        hoverlabel=dict(bgcolor="#14243a", bordercolor="#385579", font=dict(color="#f4f8ff")),
-        xaxis=dict(showgrid=False, zerolinecolor="rgba(148,163,184,.15)", linecolor="rgba(148,163,184,.18)"),
-        yaxis=dict(gridcolor="rgba(148,163,184,.12)", zerolinecolor="rgba(148,163,184,.15)", linecolor="rgba(148,163,184,.12)"),
+        colorway=["#c7d99a", "#e5b27e", "#8fb9a8", "#c98f8a", "#9eacd0", "#d1c18a", "#b39acb"],
+        font=dict(family="DM Sans, sans-serif", color="#d6ddce", size=12),
+        hoverlabel=dict(bgcolor="#252d24", bordercolor="#59674a", font=dict(color="#f4f3e9")),
+        xaxis=dict(showgrid=False, zerolinecolor="rgba(201,214,184,.12)", linecolor="rgba(201,214,184,.15)"),
+        yaxis=dict(gridcolor="rgba(201,214,184,.10)", zerolinecolor="rgba(201,214,184,.12)", linecolor="rgba(201,214,184,.10)"),
     )
     return fig
 
@@ -622,12 +640,12 @@ def dark_chart(fig, height=420):
 
 def make_player_chart(df, chart_type):
     """Build a selectable chart for Steam's Top 10 chart values."""
-    labels = {"players": "Steam chart value", "name": "Game"}
+    labels = {"players": "Steam chart figure", "name": "Game"}
 
     if chart_type == "Horizontal bars":
         fig = px.bar(
             df, x="players", y="name", orientation="h", text="players",
-            color="players", color_continuous_scale="Blues", labels=labels,
+            color="players", color_continuous_scale=["#536b43", "#c7d99a"], labels=labels,
         )
         fig.update_layout(yaxis={"categoryorder": "total ascending"}, coloraxis_showscale=False)
     elif chart_type == "Vertical bars":
@@ -646,7 +664,7 @@ def make_player_chart(df, chart_type):
     elif chart_type == "Donut":
         fig = px.pie(df, names="name", values="players", hole=0.58, labels=labels)
     else:  # Treemap
-        fig = px.treemap(df, path=["name"], values="players", color="players", color_continuous_scale="Blues")
+        fig = px.treemap(df, path=["name"], values="players", color="players", color_continuous_scale=["#536b43", "#c7d99a"])
         fig.update_layout(coloraxis_showscale=False)
 
     return dark_chart(fig, 470)
@@ -663,7 +681,7 @@ def make_review_chart(df, chart_type, height=430):
     long_df["Review type"] = long_df["Review type"].map({
         "positive": "Positive", "negative": "Negative"
     })
-    colors = {"Positive": "#22c55e", "Negative": "#ef4444"}
+    colors = {"Positive": "#a9c77b", "Negative": "#c98f8a"}
 
     if chart_type == "Grouped bars":
         fig = px.bar(long_df, x="name", y="Reviews", color="Review type", barmode="group", color_discrete_map=colors)
@@ -694,7 +712,7 @@ def make_history_chart(df, chart_type, height=460):
     """Build a selectable time-series view of collected Steam chart values."""
     labels = {
         "collected_at": "Time",
-        "chart_value": "Steam chart value",
+        "chart_value": "Steam chart figure",
         "game_name": "Game",
     }
     if chart_type == "Line":
@@ -713,14 +731,14 @@ def make_history_chart(df, chart_type, height=460):
 # =========================================================
 
 with st.sidebar:
-    st.markdown("## 🎮 STEAM ANALYTICS")
-    st.caption("YOUR GAMING COMMAND CENTER")
-    st.markdown("<div class='hero-badge'><span class='hero-dot'></span> SYSTEM READY</div>", unsafe_allow_html=True)
+    st.markdown("<div class='brand-mark'><span class='brand-icon'>🎮</span> Steam, lately</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sidebar-note'>A friendly snapshot of what people are playing.</div>", unsafe_allow_html=True)
+    
 
     st.divider()
 
     page = st.radio(
-        "NAVIGATION",
+        "TAKE A LOOK",
         [
             "Dashboard",
             "Game Explorer",
@@ -733,10 +751,10 @@ with st.sidebar:
 
     st.divider()
 
-    st.markdown("### Refresh settings")
+    st.markdown("### Update settings")
 
     auto_refresh = st.toggle(
-        "Automatic refresh",
+        "Check for updates automatically",
         value=True,
     )
 
@@ -749,7 +767,7 @@ with st.sidebar:
     refresh_seconds = REFRESH_OPTIONS[refresh_label]
 
     if st.button(
-        "🔄 Refresh now",
+        "↻ Check for updates",
         use_container_width=True,
     ):
         fetch_top_games.clear()
@@ -759,8 +777,8 @@ with st.sidebar:
 
     st.divider()
 
-    st.caption("Steam public data")
-    st.caption("No Steam API key required.")
+    st.caption("Using public Steam data")
+    st.caption("No account connection needed.")
 
 
 if auto_refresh:
@@ -806,13 +824,12 @@ except Exception as error:
 
     if games:
         st.warning(
-            "Could not refresh Steam data. "
-            "Showing the last successfully loaded rankings."
+            "Steam did not send a fresh update just now, so you are seeing the last version that loaded successfully."
         )
     else:
         st.error(f"Unable to load Steam data: {error}")
         st.info(
-            "Check your internet connection and refresh the app."
+            "Check your connection, then try the update button in the sidebar."
         )
         st.stop()
 
@@ -820,8 +837,8 @@ last_updated = st.session_state.last_updated
 
 if last_updated:
     st.caption(
-        "Last successful update: "
-        + last_updated.strftime("%Y-%m-%d %H:%M:%S")
+        "Updated "
+        + last_updated.strftime("%b %d at %I:%M %p").replace(" 0", " ")
     )
 
 top_game = games[0]
@@ -839,39 +856,39 @@ history_30 = load_history(30)
 
 if page == "Dashboard":
 
-    heading("LIVE OVERVIEW")
+    heading("A quick look")
 
     a, b, c, d = st.columns(4)
 
     with a:
         st.metric(
-            "TOP GAME",
+            "At the top",
             top_game["name"][:24],
-            "Rank #1",
+            "Currently #1",
         )
 
     with b:
         st.metric(
-            "TOP GAME CHART VALUE",
+            "Steam chart figure",
             fmt(top_game["players"]),
-            "Steam chart field",
+            "Steam-reported figure",
         )
 
     with c:
         st.metric(
-            "TOP 10 TOTAL",
+            "Top 10 combined",
             fmt(total_chart_value),
-            "Combined chart values",
+            "Across these 10 games",
         )
 
     with d:
         st.metric(
-            "TOTAL REVIEWS",
+            "Reviews counted",
             fmt(total_reviews) if review_data_count else "Unavailable",
-            f"Data available for {review_data_count}/10 games",
+            f"Available for {review_data_count} of 10 games",
         )
 
-    heading("🏆 TOP 10 LEADERBOARD")
+    heading("The games at the top")
 
     for game in games:
         rank = int(game["rank"])
@@ -892,19 +909,19 @@ if page == "Dashboard":
                 {cover_html}
                 <div class="leaderboard-info">
                     <div class="leaderboard-title">{game_name}</div>
-                    <div class="leaderboard-subtitle">{rating} &nbsp;·&nbsp; {movement} &nbsp;·&nbsp; App ID {int(game['appid'])}</div>
+                    <div class="leaderboard-subtitle">{rating} &nbsp;·&nbsp; {movement}</div>
                 </div>
-                <div class="leaderboard-score">{fmt(game['players'])}<small>Chart value</small></div>
+                <div class="leaderboard-score">{fmt(game['players'])}<small>Steam chart figure</small></div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    heading("📊 PLAYER COMPARISON")
+    heading("How the chart compares")
 
     player_df = pd.DataFrame(games)
     player_chart_type = st.selectbox(
-        "Choose player chart style",
+        "View this chart as",
         ["Horizontal bars", "Vertical bars", "Line", "Area", "Scatter", "Donut", "Treemap"],
         index=0,
         key="dashboard_player_chart_type",
@@ -914,17 +931,17 @@ if page == "Dashboard":
         use_container_width=True,
     )
 
-    heading("⭐ REVIEW ANALYTICS")
+    heading("What players think")
 
     review_df = pd.DataFrame(reviewed_games)
     if review_df.empty:
         st.warning(
-            "Review data is currently unavailable from Steam. "
+            "Steam has not shared review totals for these games just now. "
             "The app will retry after the review-data cache expires."
         )
     else:
         review_chart_type = st.selectbox(
-            "Choose review chart style",
+            "View reviews as",
             ["Grouped bars", "Stacked bars", "Horizontal bars", "Line", "Area", "Donut"],
             index=0,
             key="dashboard_review_chart_type",
@@ -939,11 +956,11 @@ if page == "Dashboard":
                 "Unavailable games are omitted rather than shown as zero."
             )
 
-    heading("📈 RECENT HISTORY")
+    heading("How the list has moved")
 
     if not history_30.empty:
         history_chart_type = st.selectbox(
-            "Choose history chart style",
+            "View the history as",
             ["Line", "Area", "Scatter", "Bars"],
             index=0,
             key="dashboard_history_chart_type",
@@ -960,8 +977,8 @@ if page == "Dashboard":
         )
     else:
         st.info(
-            "Your history graph will appear after statistics "
-            "have been collected."
+            "Your history will build as the app collects snapshots. "
+            "It can take a little while for a useful trend to appear."
         )
 
 # =========================================================
@@ -970,12 +987,12 @@ if page == "Dashboard":
 
 elif page == "Game Explorer":
 
-    heading("🔎 GAME EXPLORER")
+    heading("Get to know a game")
 
     names = [game["name"] for game in games]
 
     selected_name = st.selectbox(
-        "Choose a game",
+        "Pick a game",
         names,
     )
 
@@ -997,11 +1014,11 @@ elif page == "Game Explorer":
         )
 
     with right:
-        st.markdown(f"## {game['name']}")
-        st.write(game["description"] or "No description available.")
+        st.title(game["name"])
+        st.write(game["description"] or "Steam has not provided a description for this game.")
         m1, m2, m3 = st.columns(3)
         with m1:
-            st.metric("Chart value", fmt(game["players"]))
+            st.metric("Steam chart figure", fmt(game["players"]))
         with m2:
             st.metric("Current rank", f"#{game['rank']}")
         with m3:
@@ -1019,7 +1036,7 @@ elif page == "Game Explorer":
             f"https://store.steampowered.com/app/{game['appid']}/",
         )
 
-    heading("REVIEW DETAILS")
+    heading("Player reviews")
 
     x, y, z = st.columns(3)
 
@@ -1047,8 +1064,8 @@ elif page == "Game Explorer":
             hole=0.65,
             color=["Positive", "Negative"],
             color_discrete_map={
-                "Positive": "#22c55e",
-                "Negative": "#ef4444",
+                "Positive": "#a9c77b",
+                "Negative": "#c98f8a",
             },
         )
         st.plotly_chart(
@@ -1063,12 +1080,12 @@ elif page == "Game Explorer":
 
 elif page == "Game Comparison":
 
-    heading("⚔️ GAME COMPARISON")
+    heading("Put games side by side")
 
     options = [game["name"] for game in games]
 
     selected_names = st.multiselect(
-        "Select games to compare",
+        "Which games should we compare?",
         options,
         default=options[:3],
         max_selections=10,
@@ -1084,9 +1101,9 @@ elif page == "Game Comparison":
     else:
         compare_df = pd.DataFrame(selected_games)
 
-        st.markdown("### Player chart values")
+        st.markdown("#### Chart figures")
         player_compare_type = st.selectbox(
-            "Player comparison chart style",
+            "Show the figures as",
             ["Horizontal bars", "Vertical bars", "Line", "Area", "Scatter", "Donut", "Treemap"],
             index=1,
             key="comparison_player_chart_type",
@@ -1096,14 +1113,14 @@ elif page == "Game Comparison":
             use_container_width=True,
         )
 
-        st.markdown("### Review comparison")
+        st.markdown("#### Review comparison")
 
         review_compare_df = compare_df[compare_df["reviews_available"]].copy()
         if review_compare_df.empty:
             st.warning("Review statistics are unavailable for the selected games.")
         else:
             review_compare_type = st.selectbox(
-                "Review comparison chart style",
+                "Show reviews as",
                 ["Grouped bars", "Stacked bars", "Horizontal bars", "Line", "Area", "Donut"],
                 index=0,
                 key="comparison_review_chart_type",
@@ -1118,7 +1135,7 @@ elif page == "Game Comparison":
                     f"{missing_review_games} selected game(s) omitted because review data is unavailable."
                 )
 
-        st.markdown("### Comparison table")
+        st.markdown("#### The details")
 
         table = compare_df[
             [
@@ -1152,7 +1169,7 @@ elif page == "Game Comparison":
         table = table.rename(columns={
             "name": "Game",
             "rank": "Rank",
-            "players": "Chart value",
+            "players": "Steam chart figure",
             "review_score": "Rating",
             "positive": "Positive",
             "negative": "Negative",
@@ -1172,10 +1189,10 @@ elif page == "Game Comparison":
 
 elif page == "Player History":
 
-    heading("📈 HISTORICAL ANALYTICS")
+    heading("The chart over time")
 
     period = st.selectbox(
-        "History period",
+        "Look back over",
         ["24 hours", "7 days", "30 days"],
         index=2,
     )
@@ -1197,7 +1214,7 @@ elif page == "Player History":
         game_names = sorted(history["game_name"].unique())
 
         chosen = st.multiselect(
-            "Choose games",
+            "Show these games",
             game_names,
             default=game_names[:3],
         )
@@ -1208,7 +1225,7 @@ elif page == "Player History":
 
         if not filtered.empty:
             history_chart_type = st.selectbox(
-                "History chart style",
+                "View the timeline as",
                 ["Line", "Area", "Scatter", "Bars"],
                 index=0,
                 key="player_history_chart_type",
@@ -1238,7 +1255,7 @@ elif page == "Player History":
                 period,
             )
 
-        st.markdown("### History table")
+        st.markdown("#### Collected snapshots")
 
         st.dataframe(
             history.sort_values(
@@ -1256,15 +1273,15 @@ elif page == "Player History":
 
 elif page == "Data & Export":
 
-    heading("📥 DATA CENTER")
+    heading("Your data")
 
     st.write(
-        "Download the current rankings or your collected historical records."
+        "Save a copy of the current chart or the history this app has collected."
     )
 
     current_df = pd.DataFrame(games)
 
-    st.markdown("### Current Top 10")
+    st.markdown("#### Current top 10")
 
     st.dataframe(
         current_df,
@@ -1282,7 +1299,7 @@ elif page == "Data & Export":
         use_container_width=True,
     )
 
-    st.markdown("### Historical data")
+    st.markdown("#### Collected history")
 
     all_history = load_history(30)
 
@@ -1304,7 +1321,7 @@ elif page == "Data & Export":
             use_container_width=True,
         )
 
-    st.markdown("### Database information")
+    st.markdown("#### A note about saved history")
 
     st.caption(f"Database file: {DB_PATH.name}")
     st.caption("History retention: approximately 30 days.")
@@ -1321,7 +1338,7 @@ elif page == "Data & Export":
 
 elif page == "About":
 
-    heading("ℹ️ ABOUT STEAM ANALYTICS PRO")
+    heading("About this tracker")
 
     st.markdown(
         """
@@ -1383,7 +1400,7 @@ st.divider()
 
 st.markdown(
     "<div style='text-align:center;padding:12px 0 2px;color:#7186a2;font-size:.72rem;letter-spacing:.08em'>"
-    "STEAM ANALYTICS PRO · VERSION 3.2 · BUILT WITH PYTHON + STREAMLIT · UNOFFICIAL STEAM DASHBOARD"
+    "STEAM, LATELY · VERSION 4.0 · AN UNOFFICIAL STEAM CHARTS PROJECT"
     "</div>",
     unsafe_allow_html=True,
 )
