@@ -855,78 +855,92 @@ def make_history_chart(df, chart_type, height=460):
 # SIDEBAR
 # =========================================================
 
+# Session-level preferences. Each visitor can customise their own view.
+SESSION_DEFAULTS = {
+    # App preferences use non-widget keys so they survive navigation between pages.
+    "app_visual_style": "Sage & cozy",
+    "app_auto_refresh": True,
+    "app_refresh_label": "5 minutes",
+    "app_default_player_chart": "Horizontal bars",
+    "app_default_review_chart": "Grouped bars",
+    "app_default_history_chart": "Line",
+}
+for setting_key, setting_value in SESSION_DEFAULTS.items():
+    if setting_key not in st.session_state:
+        st.session_state[setting_key] = setting_value
+
+
+def save_setting(widget_key, preference_key):
+    """Copy a settings-page widget value into a persistent session preference."""
+    st.session_state[preference_key] = st.session_state[widget_key]
+
+
+def save_visual_style():
+    save_setting("settings_visual_style_input", "app_visual_style")
+
+
+def save_auto_refresh():
+    save_setting("settings_auto_refresh_input", "app_auto_refresh")
+
+
+def save_refresh_interval():
+    save_setting("settings_refresh_interval_input", "app_refresh_label")
+
+
+def save_default_player_chart():
+    save_setting("settings_default_player_chart_input", "app_default_player_chart")
+
+
+def save_default_review_chart():
+    save_setting("settings_default_review_chart_input", "app_default_review_chart")
+
+
+def save_default_history_chart():
+    save_setting("settings_default_history_chart_input", "app_default_history_chart")
+
 with st.sidebar:
     st.markdown("<div class='brand-mark'><span class='brand-icon'>🎮</span> Steam, lately</div>", unsafe_allow_html=True)
     st.markdown("<div class='sidebar-note'>A friendly snapshot of what people are playing.</div>", unsafe_allow_html=True)
 
     st.divider()
-    st.markdown("### Make it yours")
-    visual_style = st.selectbox(
-        "Choose a visual style",
-        list(THEME_PRESETS.keys()),
-        index=0,
-        key="visual_style",
-        help="This choice changes the colours of the app and charts for your session.",
-    )
-    chosen_palette = THEME_PRESETS[visual_style]
-    st.markdown(
-        f"""
-        <div style="display:flex;align-items:center;gap:7px;margin:2px 0 5px;">
-            <span title="Background" style="width:19px;height:19px;border-radius:50%;background:{chosen_palette['bg']};border:1px solid {chosen_palette['line']};display:inline-block"></span>
-            <span title="Panel" style="width:19px;height:19px;border-radius:50%;background:{chosen_palette['panel']};border:1px solid {chosen_palette['line']};display:inline-block"></span>
-            <span title="Accent" style="width:19px;height:19px;border-radius:50%;background:{chosen_palette['accent']};display:inline-block"></span>
-            <span title="Warm highlight" style="width:19px;height:19px;border-radius:50%;background:{chosen_palette['warm']};display:inline-block"></span>
-        </div>
-        <div class="sidebar-note">{html_escape(chosen_palette['description'])}</div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.divider()
-
     page = st.radio(
-        "TAKE A LOOK",
+        "EXPLORE",
         [
             "Dashboard",
             "Game Explorer",
             "Game Comparison",
             "Player History",
             "Data & Export",
+            "Settings",
             "About",
         ],
+        format_func=lambda item: "⚙️  Settings" if item == "Settings" else item,
     )
 
     st.divider()
-
-    st.markdown("### Update settings")
-
-    auto_refresh = st.toggle(
-        "Check for updates automatically",
-        value=True,
+    active_palette = THEME_PRESETS[st.session_state["app_visual_style"]]
+    st.markdown(
+        f"""
+        <div style="display:flex;align-items:center;gap:9px;margin:2px 0 6px;">
+            <div style="display:flex;gap:4px;">
+                <span style="width:13px;height:13px;border-radius:50%;background:{active_palette['bg']};border:1px solid {active_palette['line']};display:inline-block"></span>
+                <span style="width:13px;height:13px;border-radius:50%;background:{active_palette['panel']};border:1px solid {active_palette['line']};display:inline-block"></span>
+                <span style="width:13px;height:13px;border-radius:50%;background:{active_palette['accent']};display:inline-block"></span>
+            </div>
+            <span class="sidebar-note">{html_escape(st.session_state['app_visual_style'])}</span>
+        </div>
+        <div class="sidebar-note">Personalise colours, updates and charts in Settings.</div>
+        """,
+        unsafe_allow_html=True,
     )
-
-    refresh_label = st.selectbox(
-        "Refresh interval",
-        list(REFRESH_OPTIONS.keys()),
-        index=2,
-    )
-
-    refresh_seconds = REFRESH_OPTIONS[refresh_label]
-
-    if st.button(
-        "↻ Check for updates",
-        use_container_width=True,
-    ):
-        fetch_top_games.clear()
-        fetch_game_details.clear()
-        fetch_reviews.clear()
-        st.rerun()
-
     st.divider()
-
     st.caption("Using public Steam data")
     st.caption("No account connection needed.")
 
+visual_style = st.session_state["app_visual_style"]
+auto_refresh = bool(st.session_state["app_auto_refresh"])
+refresh_label = st.session_state["app_refresh_label"]
+refresh_seconds = REFRESH_OPTIONS.get(refresh_label, 300)
 
 ACTIVE_THEME = THEME_PRESETS[visual_style]
 apply_visual_theme(ACTIVE_THEME)
@@ -1070,10 +1084,13 @@ if page == "Dashboard":
     heading("How the chart compares")
 
     player_df = pd.DataFrame(games)
+    player_chart_options = ["Horizontal bars", "Vertical bars", "Line", "Area", "Scatter", "Donut", "Treemap"]
+    player_chart_saved = st.session_state.get("dashboard_player_chart_type", st.session_state["app_default_player_chart"])
+    player_chart_index = player_chart_options.index(player_chart_saved) if player_chart_saved in player_chart_options else 0
     player_chart_type = st.selectbox(
         "View this chart as",
-        ["Horizontal bars", "Vertical bars", "Line", "Area", "Scatter", "Donut", "Treemap"],
-        index=0,
+        player_chart_options,
+        index=player_chart_index,
         key="dashboard_player_chart_type",
     )
     st.plotly_chart(
@@ -1090,10 +1107,13 @@ if page == "Dashboard":
             "The app will retry after the review-data cache expires."
         )
     else:
+        review_chart_options = ["Grouped bars", "Stacked bars", "Horizontal bars", "Line", "Area", "Donut"]
+        review_chart_saved = st.session_state.get("dashboard_review_chart_type", st.session_state["app_default_review_chart"])
+        review_chart_index = review_chart_options.index(review_chart_saved) if review_chart_saved in review_chart_options else 0
         review_chart_type = st.selectbox(
             "View reviews as",
-            ["Grouped bars", "Stacked bars", "Horizontal bars", "Line", "Area", "Donut"],
-            index=0,
+            review_chart_options,
+            index=review_chart_index,
             key="dashboard_review_chart_type",
         )
         st.plotly_chart(
@@ -1109,10 +1129,13 @@ if page == "Dashboard":
     heading("How the list has moved")
 
     if not history_30.empty:
+        history_chart_options = ["Line", "Area", "Scatter", "Bars"]
+        history_chart_saved = st.session_state.get("dashboard_history_chart_type", st.session_state["app_default_history_chart"])
+        history_chart_index = history_chart_options.index(history_chart_saved) if history_chart_saved in history_chart_options else 0
         history_chart_type = st.selectbox(
             "View the history as",
-            ["Line", "Area", "Scatter", "Bars"],
-            index=0,
+            history_chart_options,
+            index=history_chart_index,
             key="dashboard_history_chart_type",
         )
         st.plotly_chart(
@@ -1252,10 +1275,13 @@ elif page == "Game Comparison":
         compare_df = pd.DataFrame(selected_games)
 
         st.markdown("#### Chart figures")
+        compare_player_options = ["Horizontal bars", "Vertical bars", "Line", "Area", "Scatter", "Donut", "Treemap"]
+        compare_player_saved = st.session_state.get("comparison_player_chart_type", st.session_state["app_default_player_chart"])
+        compare_player_index = compare_player_options.index(compare_player_saved) if compare_player_saved in compare_player_options else 1
         player_compare_type = st.selectbox(
             "Show the figures as",
-            ["Horizontal bars", "Vertical bars", "Line", "Area", "Scatter", "Donut", "Treemap"],
-            index=1,
+            compare_player_options,
+            index=compare_player_index,
             key="comparison_player_chart_type",
         )
         st.plotly_chart(
@@ -1269,10 +1295,13 @@ elif page == "Game Comparison":
         if review_compare_df.empty:
             st.warning("Review statistics are unavailable for the selected games.")
         else:
+            compare_review_options = ["Grouped bars", "Stacked bars", "Horizontal bars", "Line", "Area", "Donut"]
+            compare_review_saved = st.session_state.get("comparison_review_chart_type", st.session_state["app_default_review_chart"])
+            compare_review_index = compare_review_options.index(compare_review_saved) if compare_review_saved in compare_review_options else 0
             review_compare_type = st.selectbox(
                 "Show reviews as",
-                ["Grouped bars", "Stacked bars", "Horizontal bars", "Line", "Area", "Donut"],
-                index=0,
+                compare_review_options,
+                index=compare_review_index,
                 key="comparison_review_chart_type",
             )
             st.plotly_chart(
@@ -1374,10 +1403,13 @@ elif page == "Player History":
         ]
 
         if not filtered.empty:
+            history_view_options = ["Line", "Area", "Scatter", "Bars"]
+            history_view_saved = st.session_state.get("player_history_chart_type", st.session_state["app_default_history_chart"])
+            history_view_index = history_view_options.index(history_view_saved) if history_view_saved in history_view_options else 0
             history_chart_type = st.selectbox(
                 "View the timeline as",
-                ["Line", "Area", "Scatter", "Bars"],
-                index=0,
+                history_view_options,
+                index=history_view_index,
                 key="player_history_chart_type",
             )
             st.plotly_chart(
@@ -1483,6 +1515,116 @@ elif page == "Data & Export":
 
 
 # =========================================================
+# SETTINGS
+# =========================================================
+
+elif page == "Settings":
+
+    heading("Settings")
+    st.write("Make the tracker feel right for you. These preferences apply to your current app session.")
+
+    appearance_tab, updates_tab, charts_tab = st.tabs(["🎨  Appearance", "↻  Updates", "📊  Charts"])
+
+    with appearance_tab:
+        st.markdown("#### Choose your look")
+        st.caption("Pick a palette. The dashboard colours update automatically after you choose one.")
+        style_names = list(THEME_PRESETS.keys())
+        visual_style = st.selectbox(
+            "Visual style",
+            style_names,
+            index=style_names.index(st.session_state["app_visual_style"]),
+            key="settings_visual_style_input",
+            on_change=save_visual_style,
+            help="Your choice changes the app panels, buttons and chart palette.",
+        )
+        selected_theme = THEME_PRESETS[visual_style]
+        swatch_cols = st.columns(4)
+        swatch_items = [
+            ("Background", selected_theme["bg"]),
+            ("Cards", selected_theme["panel"]),
+            ("Accent", selected_theme["accent"]),
+            ("Highlight", selected_theme["warm"]),
+        ]
+        for swatch_col, (swatch_name, swatch_color) in zip(swatch_cols, swatch_items):
+            with swatch_col:
+                st.markdown(
+                    f"<div style='height:38px;border-radius:10px;background:{swatch_color};border:1px solid {selected_theme['line']}'></div>",
+                    unsafe_allow_html=True,
+                )
+                st.caption(swatch_name)
+        st.info(selected_theme["description"])
+        st.caption("Theme choices are kept for this browser session; they are not shared between visitors.")
+
+    with updates_tab:
+        st.markdown("#### Keep the numbers fresh")
+        st.toggle(
+            "Check for updates automatically",
+            value=bool(st.session_state["app_auto_refresh"]),
+            key="settings_auto_refresh_input",
+            on_change=save_auto_refresh,
+            help="When turned off, the app only updates when you request it.",
+        )
+        st.selectbox(
+            "Refresh interval",
+            list(REFRESH_OPTIONS.keys()),
+            index=list(REFRESH_OPTIONS.keys()).index(st.session_state["app_refresh_label"]),
+            key="settings_refresh_interval_input",
+            on_change=save_refresh_interval,
+            disabled=not st.session_state["app_auto_refresh"],
+        )
+        if st.button("↻  Check Steam now", use_container_width=True, key="settings_refresh_now"):
+            fetch_top_games.clear()
+            fetch_game_details.clear()
+            fetch_reviews.clear()
+            st.rerun()
+        if st.session_state["app_auto_refresh"]:
+            st.caption(f"Automatic checks are set for every {st.session_state['app_refresh_label'].lower()}.")
+        else:
+            st.caption("Automatic checks are paused. Use the button above whenever you want fresh data.")
+
+    with charts_tab:
+        st.markdown("#### Pick your usual chart styles")
+        st.caption("These become the starting chart styles on the dashboard, comparison and history pages.")
+        player_options = ["Horizontal bars", "Vertical bars", "Line", "Area", "Scatter", "Donut", "Treemap"]
+        review_options = ["Grouped bars", "Stacked bars", "Horizontal bars", "Line", "Area", "Donut"]
+        history_options = ["Line", "Area", "Scatter", "Bars"]
+        default_player = st.selectbox(
+            "Game popularity chart",
+            player_options,
+            index=player_options.index(st.session_state["app_default_player_chart"]),
+            key="settings_default_player_chart_input",
+            on_change=save_default_player_chart,
+        )
+        default_review = st.selectbox(
+            "Review chart",
+            review_options,
+            index=review_options.index(st.session_state["app_default_review_chart"]),
+            key="settings_default_review_chart_input",
+            on_change=save_default_review_chart,
+        )
+        default_history = st.selectbox(
+            "History chart",
+            history_options,
+            index=history_options.index(st.session_state["app_default_history_chart"]),
+            key="settings_default_history_chart_input",
+            on_change=save_default_history_chart,
+        )
+        if st.button("Apply chart preferences", use_container_width=True, key="apply_chart_defaults"):
+            # These chart widgets are not instantiated on the Settings page.
+            for key in ["dashboard_player_chart_type", "comparison_player_chart_type"]:
+                st.session_state[key] = default_player
+            for key in ["dashboard_review_chart_type", "comparison_review_chart_type"]:
+                st.session_state[key] = default_review
+            for key in ["dashboard_history_chart_type", "player_history_chart_type"]:
+                st.session_state[key] = default_history
+            st.success("Your chart preferences have been applied.")
+
+    st.divider()
+    st.markdown("#### About these settings")
+    st.caption("Settings are saved for your active session and stay in place as you move between pages. They reset when the session expires.")
+
+
+# =========================================================
 # ABOUT
 # =========================================================
 
@@ -1550,7 +1692,7 @@ st.divider()
 
 st.markdown(
     "<div style='text-align:center;padding:12px 0 2px;color:#7186a2;font-size:.72rem;letter-spacing:.08em'>"
-    "STEAM, LATELY · VERSION 4.1 · YOUR STEAM, YOUR STYLE"
+    "STEAM, LATELY · VERSION 4.2 · YOUR STEAM, YOUR SETTINGS"
     "</div>",
     unsafe_allow_html=True,
 )
