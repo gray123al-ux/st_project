@@ -857,7 +857,6 @@ def make_history_chart(df, chart_type, height=460):
 
 # Session-level preferences. Each visitor can customise their own view.
 SESSION_DEFAULTS = {
-    # App preferences use non-widget keys so they survive navigation between pages.
     "app_visual_style": "Sage & cozy",
     "app_auto_refresh": True,
     "app_refresh_label": "5 minutes",
@@ -869,14 +868,14 @@ for setting_key, setting_value in SESSION_DEFAULTS.items():
     if setting_key not in st.session_state:
         st.session_state[setting_key] = setting_value
 
-# Keep both the sidebar quick controls and the full Settings page in sync.
+# All preferences are controlled from the single Quick settings panel.
 PREFERENCE_WIDGETS = {
-    "app_visual_style": ["sidebar_visual_style_input", "settings_visual_style_input"],
-    "app_auto_refresh": ["sidebar_auto_refresh_input", "settings_auto_refresh_input"],
-    "app_refresh_label": ["sidebar_refresh_interval_input", "settings_refresh_interval_input"],
-    "app_default_player_chart": ["settings_default_player_chart_input"],
-    "app_default_review_chart": ["settings_default_review_chart_input"],
-    "app_default_history_chart": ["settings_default_history_chart_input"],
+    "app_visual_style": ["sidebar_visual_style_input"],
+    "app_auto_refresh": ["sidebar_auto_refresh_input"],
+    "app_refresh_label": ["sidebar_refresh_interval_input"],
+    "app_default_player_chart": ["sidebar_default_player_chart_input"],
+    "app_default_review_chart": ["sidebar_default_review_chart_input"],
+    "app_default_history_chart": ["sidebar_default_history_chart_input"],
 }
 
 for preference_key, widget_keys in PREFERENCE_WIDGETS.items():
@@ -886,32 +885,16 @@ for preference_key, widget_keys in PREFERENCE_WIDGETS.items():
 
 
 def save_setting(widget_key, preference_key):
-    """Save a widget selection and mirror it to the matching settings control."""
-    value = st.session_state[widget_key]
-    st.session_state[preference_key] = value
-    for other_widget_key in PREFERENCE_WIDGETS.get(preference_key, []):
-        if other_widget_key != widget_key:
-            st.session_state[other_widget_key] = value
-
-
-def save_visual_style():
-    save_setting("settings_visual_style_input", "app_visual_style")
+    """Save a sidebar preference in the current visitor's session."""
+    st.session_state[preference_key] = st.session_state[widget_key]
 
 
 def save_sidebar_visual_style():
     save_setting("sidebar_visual_style_input", "app_visual_style")
 
 
-def save_auto_refresh():
-    save_setting("settings_auto_refresh_input", "app_auto_refresh")
-
-
 def save_sidebar_auto_refresh():
     save_setting("sidebar_auto_refresh_input", "app_auto_refresh")
-
-
-def save_refresh_interval():
-    save_setting("settings_refresh_interval_input", "app_refresh_label")
 
 
 def save_sidebar_refresh_interval():
@@ -919,15 +902,23 @@ def save_sidebar_refresh_interval():
 
 
 def save_default_player_chart():
-    save_setting("settings_default_player_chart_input", "app_default_player_chart")
+    save_setting("sidebar_default_player_chart_input", "app_default_player_chart")
+    # Update chart selectors already used elsewhere in the app.
+    for key in ["dashboard_player_chart_type", "comparison_player_chart_type"]:
+        st.session_state[key] = st.session_state["app_default_player_chart"]
 
 
 def save_default_review_chart():
-    save_setting("settings_default_review_chart_input", "app_default_review_chart")
+    save_setting("sidebar_default_review_chart_input", "app_default_review_chart")
+    for key in ["dashboard_review_chart_type", "comparison_review_chart_type"]:
+        st.session_state[key] = st.session_state["app_default_review_chart"]
 
 
 def save_default_history_chart():
-    save_setting("settings_default_history_chart_input", "app_default_history_chart")
+    save_setting("sidebar_default_history_chart_input", "app_default_history_chart")
+    for key in ["dashboard_history_chart_type", "player_history_chart_type"]:
+        st.session_state[key] = st.session_state["app_default_history_chart"]
+
 
 with st.sidebar:
     st.markdown("<div class='brand-mark'><span class='brand-icon'>🎮</span> Steam, lately</div>", unsafe_allow_html=True)
@@ -942,23 +933,26 @@ with st.sidebar:
             "Game Comparison",
             "Player History",
             "Data & Export",
-            "Settings",
             "About",
         ],
-        format_func=lambda item: "⚙️  Settings" if item == "Settings" else item,
     )
 
     st.divider()
-    # Compact controls live exactly beneath the navigation, where visitors can
-    # reach the most-used preferences without leaving the page they are viewing.
-    with st.expander("⚙️  Quick settings", expanded=(page == "Settings")):
-        st.caption("A few handy controls for your view.")
+    # One clear settings area lives below navigation. There is no duplicate
+    # Settings destination in the Explore list.
+    with st.expander("⚙️  Quick settings", expanded=False):
+        st.caption("Make the app look and work the way you like.")
+
+        st.markdown("**Appearance**")
         st.selectbox(
             "Visual style",
             list(THEME_PRESETS.keys()),
             key="sidebar_visual_style_input",
             on_change=save_sidebar_visual_style,
         )
+
+        st.divider()
+        st.markdown("**Updates**")
         st.toggle(
             "Automatic updates",
             key="sidebar_auto_refresh_input",
@@ -971,7 +965,33 @@ with st.sidebar:
             on_change=save_sidebar_refresh_interval,
             disabled=not st.session_state["app_auto_refresh"],
         )
-        st.caption("For chart defaults and more options, open the Settings page above.")
+        if st.button("↻  Refresh Steam now", use_container_width=True, key="sidebar_refresh_now"):
+            fetch_top_games.clear()
+            fetch_game_details.clear()
+            fetch_reviews.clear()
+            st.rerun()
+
+        st.divider()
+        st.markdown("**Default charts**")
+        st.selectbox(
+            "Game popularity",
+            ["Horizontal bars", "Vertical bars", "Line", "Area", "Scatter", "Donut", "Treemap"],
+            key="sidebar_default_player_chart_input",
+            on_change=save_default_player_chart,
+        )
+        st.selectbox(
+            "Review statistics",
+            ["Grouped bars", "Stacked bars", "Horizontal bars", "Line", "Area", "Donut"],
+            key="sidebar_default_review_chart_input",
+            on_change=save_default_review_chart,
+        )
+        st.selectbox(
+            "Player history",
+            ["Line", "Area", "Scatter", "Bars"],
+            key="sidebar_default_history_chart_input",
+            on_change=save_default_history_chart,
+        )
+        st.caption("Your choices apply to this visit and are kept while your session is active.")
 
     st.divider()
     st.caption("Using public Steam data")
@@ -1555,116 +1575,6 @@ elif page == "Data & Export":
 
 
 # =========================================================
-# SETTINGS
-# =========================================================
-
-elif page == "Settings":
-
-    heading("Settings")
-    st.write("Make the tracker feel right for you. These preferences apply to your current app session.")
-
-    appearance_tab, updates_tab, charts_tab = st.tabs(["🎨  Appearance", "↻  Updates", "📊  Charts"])
-
-    with appearance_tab:
-        st.markdown("#### Choose your look")
-        st.caption("Pick a palette. The dashboard colours update automatically after you choose one.")
-        style_names = list(THEME_PRESETS.keys())
-        visual_style = st.selectbox(
-            "Visual style",
-            style_names,
-            index=style_names.index(st.session_state["app_visual_style"]),
-            key="settings_visual_style_input",
-            on_change=save_visual_style,
-            help="Your choice changes the app panels, buttons and chart palette.",
-        )
-        selected_theme = THEME_PRESETS[visual_style]
-        swatch_cols = st.columns(4)
-        swatch_items = [
-            ("Background", selected_theme["bg"]),
-            ("Cards", selected_theme["panel"]),
-            ("Accent", selected_theme["accent"]),
-            ("Highlight", selected_theme["warm"]),
-        ]
-        for swatch_col, (swatch_name, swatch_color) in zip(swatch_cols, swatch_items):
-            with swatch_col:
-                st.markdown(
-                    f"<div style='height:38px;border-radius:10px;background:{swatch_color};border:1px solid {selected_theme['line']}'></div>",
-                    unsafe_allow_html=True,
-                )
-                st.caption(swatch_name)
-        st.info(selected_theme["description"])
-        st.caption("Theme choices are kept for this browser session; they are not shared between visitors.")
-
-    with updates_tab:
-        st.markdown("#### Keep the numbers fresh")
-        st.toggle(
-            "Check for updates automatically",
-            value=bool(st.session_state["app_auto_refresh"]),
-            key="settings_auto_refresh_input",
-            on_change=save_auto_refresh,
-            help="When turned off, the app only updates when you request it.",
-        )
-        st.selectbox(
-            "Refresh interval",
-            list(REFRESH_OPTIONS.keys()),
-            index=list(REFRESH_OPTIONS.keys()).index(st.session_state["app_refresh_label"]),
-            key="settings_refresh_interval_input",
-            on_change=save_refresh_interval,
-            disabled=not st.session_state["app_auto_refresh"],
-        )
-        if st.button("↻  Check Steam now", use_container_width=True, key="settings_refresh_now"):
-            fetch_top_games.clear()
-            fetch_game_details.clear()
-            fetch_reviews.clear()
-            st.rerun()
-        if st.session_state["app_auto_refresh"]:
-            st.caption(f"Automatic checks are set for every {st.session_state['app_refresh_label'].lower()}.")
-        else:
-            st.caption("Automatic checks are paused. Use the button above whenever you want fresh data.")
-
-    with charts_tab:
-        st.markdown("#### Pick your usual chart styles")
-        st.caption("These become the starting chart styles on the dashboard, comparison and history pages.")
-        player_options = ["Horizontal bars", "Vertical bars", "Line", "Area", "Scatter", "Donut", "Treemap"]
-        review_options = ["Grouped bars", "Stacked bars", "Horizontal bars", "Line", "Area", "Donut"]
-        history_options = ["Line", "Area", "Scatter", "Bars"]
-        default_player = st.selectbox(
-            "Game popularity chart",
-            player_options,
-            index=player_options.index(st.session_state["app_default_player_chart"]),
-            key="settings_default_player_chart_input",
-            on_change=save_default_player_chart,
-        )
-        default_review = st.selectbox(
-            "Review chart",
-            review_options,
-            index=review_options.index(st.session_state["app_default_review_chart"]),
-            key="settings_default_review_chart_input",
-            on_change=save_default_review_chart,
-        )
-        default_history = st.selectbox(
-            "History chart",
-            history_options,
-            index=history_options.index(st.session_state["app_default_history_chart"]),
-            key="settings_default_history_chart_input",
-            on_change=save_default_history_chart,
-        )
-        if st.button("Apply chart preferences", use_container_width=True, key="apply_chart_defaults"):
-            # These chart widgets are not instantiated on the Settings page.
-            for key in ["dashboard_player_chart_type", "comparison_player_chart_type"]:
-                st.session_state[key] = default_player
-            for key in ["dashboard_review_chart_type", "comparison_review_chart_type"]:
-                st.session_state[key] = default_review
-            for key in ["dashboard_history_chart_type", "player_history_chart_type"]:
-                st.session_state[key] = default_history
-            st.success("Your chart preferences have been applied.")
-
-    st.divider()
-    st.markdown("#### About these settings")
-    st.caption("Settings are saved for your active session and stay in place as you move between pages. They reset when the session expires.")
-
-
-# =========================================================
 # ABOUT
 # =========================================================
 
@@ -1674,7 +1584,7 @@ elif page == "About":
 
     st.markdown(
         """
-        Steam Analytics Pro is an unofficial dashboard for exploring
+        Steam, lately is an unofficial dashboard for exploring
         Steam's most-played games and public review information.
 
         **Features**
@@ -1732,7 +1642,7 @@ st.divider()
 
 st.markdown(
     "<div style='text-align:center;padding:12px 0 2px;color:#7186a2;font-size:.72rem;letter-spacing:.08em'>"
-    "STEAM, LATELY · VERSION 4.2 · YOUR STEAM, YOUR SETTINGS"
+    "STEAM, LATELY · VERSION 4.4 · YOUR STEAM, YOUR SETTINGS"
     "</div>",
     unsafe_allow_html=True,
 )
