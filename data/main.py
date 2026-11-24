@@ -869,22 +869,53 @@ for setting_key, setting_value in SESSION_DEFAULTS.items():
     if setting_key not in st.session_state:
         st.session_state[setting_key] = setting_value
 
+# Keep both the sidebar quick controls and the full Settings page in sync.
+PREFERENCE_WIDGETS = {
+    "app_visual_style": ["sidebar_visual_style_input", "settings_visual_style_input"],
+    "app_auto_refresh": ["sidebar_auto_refresh_input", "settings_auto_refresh_input"],
+    "app_refresh_label": ["sidebar_refresh_interval_input", "settings_refresh_interval_input"],
+    "app_default_player_chart": ["settings_default_player_chart_input"],
+    "app_default_review_chart": ["settings_default_review_chart_input"],
+    "app_default_history_chart": ["settings_default_history_chart_input"],
+}
+
+for preference_key, widget_keys in PREFERENCE_WIDGETS.items():
+    for widget_key in widget_keys:
+        if widget_key not in st.session_state:
+            st.session_state[widget_key] = st.session_state[preference_key]
+
 
 def save_setting(widget_key, preference_key):
-    """Copy a settings-page widget value into a persistent session preference."""
-    st.session_state[preference_key] = st.session_state[widget_key]
+    """Save a widget selection and mirror it to the matching settings control."""
+    value = st.session_state[widget_key]
+    st.session_state[preference_key] = value
+    for other_widget_key in PREFERENCE_WIDGETS.get(preference_key, []):
+        if other_widget_key != widget_key:
+            st.session_state[other_widget_key] = value
 
 
 def save_visual_style():
     save_setting("settings_visual_style_input", "app_visual_style")
 
 
+def save_sidebar_visual_style():
+    save_setting("sidebar_visual_style_input", "app_visual_style")
+
+
 def save_auto_refresh():
     save_setting("settings_auto_refresh_input", "app_auto_refresh")
 
 
+def save_sidebar_auto_refresh():
+    save_setting("sidebar_auto_refresh_input", "app_auto_refresh")
+
+
 def save_refresh_interval():
     save_setting("settings_refresh_interval_input", "app_refresh_label")
+
+
+def save_sidebar_refresh_interval():
+    save_setting("sidebar_refresh_interval_input", "app_refresh_label")
 
 
 def save_default_player_chart():
@@ -918,21 +949,30 @@ with st.sidebar:
     )
 
     st.divider()
-    active_palette = THEME_PRESETS[st.session_state["app_visual_style"]]
-    st.markdown(
-        f"""
-        <div style="display:flex;align-items:center;gap:9px;margin:2px 0 6px;">
-            <div style="display:flex;gap:4px;">
-                <span style="width:13px;height:13px;border-radius:50%;background:{active_palette['bg']};border:1px solid {active_palette['line']};display:inline-block"></span>
-                <span style="width:13px;height:13px;border-radius:50%;background:{active_palette['panel']};border:1px solid {active_palette['line']};display:inline-block"></span>
-                <span style="width:13px;height:13px;border-radius:50%;background:{active_palette['accent']};display:inline-block"></span>
-            </div>
-            <span class="sidebar-note">{html_escape(st.session_state['app_visual_style'])}</span>
-        </div>
-        <div class="sidebar-note">Personalise colours, updates and charts in Settings.</div>
-        """,
-        unsafe_allow_html=True,
-    )
+    # Compact controls live exactly beneath the navigation, where visitors can
+    # reach the most-used preferences without leaving the page they are viewing.
+    with st.expander("⚙️  Quick settings", expanded=(page == "Settings")):
+        st.caption("A few handy controls for your view.")
+        st.selectbox(
+            "Visual style",
+            list(THEME_PRESETS.keys()),
+            key="sidebar_visual_style_input",
+            on_change=save_sidebar_visual_style,
+        )
+        st.toggle(
+            "Automatic updates",
+            key="sidebar_auto_refresh_input",
+            on_change=save_sidebar_auto_refresh,
+        )
+        st.selectbox(
+            "Refresh interval",
+            list(REFRESH_OPTIONS.keys()),
+            key="sidebar_refresh_interval_input",
+            on_change=save_sidebar_refresh_interval,
+            disabled=not st.session_state["app_auto_refresh"],
+        )
+        st.caption("For chart defaults and more options, open the Settings page above.")
+
     st.divider()
     st.caption("Using public Steam data")
     st.caption("No account connection needed.")
