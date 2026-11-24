@@ -1131,9 +1131,24 @@ elif page == "Game Comparison":
                 "total_reviews",
             ]
         ].copy()
-        table.loc[~compare_df["reviews_available"], [
+        # Keep numeric review data intact for charts, but build a separate
+        # display-safe table. Recent pandas versions (including pandas 3.x)
+        # reject assigning strings into int/float columns with .loc.
+        review_columns = [
             "review_score", "positive", "negative", "total_reviews"
-        ]] = "Unavailable"
+        ]
+        reviews_available = (
+            compare_df["reviews_available"]
+            .fillna(False)
+            .astype(bool)
+            .tolist()
+        )
+        for column in review_columns:
+            original_values = table[column].tolist()
+            table[column] = [
+                value if available else "Unavailable"
+                for available, value in zip(reviews_available, original_values)
+            ]
         table = table.rename(columns={
             "name": "Game",
             "rank": "Rank",
